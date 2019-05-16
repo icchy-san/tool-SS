@@ -2,16 +2,24 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"log"
-	"net/http"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/sheets/v4"
+	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
+	"reflect"
 )
+
+func checkError(err error) {
+	if err != nil {
+		log.Fatal("Error:", err)
+	}
+}
 
 func getClient(config *oauth2.Config) *http.Client {
 	tokenFile := "token.json"
@@ -26,7 +34,7 @@ func getClient(config *oauth2.Config) *http.Client {
 // Request a token from the web
 func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
 	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-	fmt.Printf("Go to the following link in your browser then type the " +  "authorization code: \n%v\n", authURL)
+	fmt.Printf("Go to the following link in your browser then type the "+"authorization code: \n%v\n", authURL)
 
 	var authCode string
 	if _, err := fmt.Scan(&authCode); err != nil {
@@ -63,6 +71,11 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
+// TODO: CSVファイルを分離する関数
+func chunk(s [][]interface{}) [][]interface{} {
+	v := [][]interface{}{}
+	return v
+}
 
 func main() {
 	b, err := ioutil.ReadFile("credentials.json")
@@ -79,31 +92,39 @@ func main() {
 
 	srv, err := sheets.New(client)
 
+	// READ CSV File
+	diffFile, err := os.Open("diff.csv")
+	checkError(err)
+	defer diffFile.Close()
+
+	reader := csv.NewReader(diffFile)
+	lines, err := reader.ReadAll()
+	checkError(err)
+
+	var header []string
+	header, lines = lines[0], lines[1:]
+
+	log.Printf("%v", header)
+
+	//values := chunk(lines)
+
 	ssID := ""
 	writeRange := "シート2!A2:E"
-	values := [][]interface{}{{"hogehoge", "fugafuga"},{"hogehoge"}}
+	val := [][]interface{}{{"hogehoge", "fugafuga"}, {"hogehoge"}}
+	log.Printf("%v", reflect.TypeOf(val))
 
 	data := []*sheets.ValueRange{
 		{
-			Range: writeRange,
-			Values: values,
+			Range:  writeRange,
+			Values: val,
 		},
 	}
 
 	updateValueReq := sheets.BatchUpdateValuesRequest{
-		Data: data,
+		Data:             data,
 		ValueInputOption: "RAW",
 	}
 
 	resp, err := srv.Spreadsheets.Values.BatchUpdate(ssID, &updateValueReq).Do()
 	log.Printf("%v,\n %v", resp, err)
-	//if len(resp.Values) == 0 {
-	//	fmt.Println("No data found.")
-	//} else {
-	//	fmt.Println("Name, Major:")
-	//	for _, row := range resp.Values {
-	//		// Print columns A and E, which correspond to indices 0 and 4.
-	//		fmt.Printf("%s\n", row[0])
-	//	}
-	//}
 }
