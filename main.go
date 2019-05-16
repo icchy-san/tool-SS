@@ -2,24 +2,19 @@ package main
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/sheets/v4"
+	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/googleapi"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
-	"reflect"
+	"strconv"
+	"time"
 )
-
-func checkError(err error) {
-	if err != nil {
-		log.Fatal("Error:", err)
-	}
-}
 
 func getClient(config *oauth2.Config) *http.Client {
 	tokenFile := "token.json"
@@ -71,60 +66,56 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
-// TODO: CSVファイルを分離する関数
-func chunk(s [][]interface{}) [][]interface{} {
-	v := [][]interface{}{}
-	return v
-}
-
 func main() {
 	b, err := ioutil.ReadFile("credentials.json")
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
 	}
 
-	config, err := google.ConfigFromJSON(b, "https://www.googleapis.com/auth/spreadsheets")
+	config, err := google.ConfigFromJSON(b, drive.DriveFileScope)
 	if err != nil {
 		log.Printf("hogehoge")
 	}
 
+	// Upload CSV file to Google Drive
+	filename := "diffFile.csv"
+	createdTimeStamp := time.Now().Unix()
+	TimeStampStr := strconv.FormatInt(createdTimeStamp, 10)
+
+	uploadFileName := "DIFF_" + TimeStampStr
+	baseMimeType := "text/csv"
+	convertedMimeType := "application/vnd.google-apps.spreadsheet"
+	f, err := os.Open(filename)
+	if err != nil {
+		log.Fatalf("Error %v", err)
+	}
+	defer f.Close()
+
+	driveFile := &drive.File{
+		Name:     uploadFileName,
+		MimeType: convertedMimeType,
+	}
+
 	client := getClient(config)
+	srv, err := drive.New(client)
 
-	srv, err := sheets.New(client)
-
-	// READ CSV File
-	diffFile, err := os.Open("diff.csv")
-	checkError(err)
-	defer diffFile.Close()
-
-	reader := csv.NewReader(diffFile)
-	lines, err := reader.ReadAll()
-	checkError(err)
-
-	var header []string
-	header, lines = lines[0], lines[1:]
-
-	log.Printf("%v", header)
-
-	//values := chunk(lines)
-
-	ssID := ""
-	writeRange := "シート2!A2:E"
-	val := [][]interface{}{{"hogehoge", "fugafuga"}, {"hogehoge"}}
-	log.Printf("%v", reflect.TypeOf(val))
-
-	data := []*sheets.ValueRange{
-		{
-			Range:  writeRange,
-			Values: val,
-		},
+	res, err := srv.Files.Create(driveFile).Media(f, googleapi.ContentType(baseMimeType)).Do()
+	if err != nil {
+		log.Fatalf("Error: %v", err)
 	}
 
-	updateValueReq := sheets.BatchUpdateValuesRequest{
-		Data:             data,
-		ValueInputOption: "RAW",
+	fmt.Printf("%s, %s, %s\n", res.Name, res.Id, res.MimeType)
+	fmt.Printf("SpreadSheet URL: https://docs.google.com/spreadsheets/d/%s\n", res.Id)
+
+	permissiondata := &drive.Permission{
+		Type:               "domain",
+		Role:               "writer",
+		Domain:             "google.com",
+		AllowFileDiscovery: true,
 	}
 
-	resp, err := srv.Spreadsheets.Values.BatchUpdate(ssID, &updateValueReq).Do()
-	log.Printf("%v,\n %v", resp, err)
+	_, err = srv.Permissions.Create(res.Id, permissiondata).Do()
+	if err != nil {
+		log.Fatalf("Error: %v", err)
+	}
 }
