@@ -72,9 +72,10 @@ func main() {
 		log.Fatalf("Unable to read client secret file: %v", err)
 	}
 
+	log.Printf("%v", b)
 	config, err := google.ConfigFromJSON(b, drive.DriveFileScope)
 	if err != nil {
-		log.Printf("hogehoge")
+		log.Println(err)
 	}
 
 	// Upload CSV file to Google Drive
@@ -109,8 +110,8 @@ func main() {
 
 	permissiondata := &drive.Permission{
 		Type:               "domain",
-		Role:               "writer",
-		Domain:             "google.com",
+		Role:               "reader",
+		Domain:             "leverages.jp",
 		AllowFileDiscovery: true,
 	}
 
