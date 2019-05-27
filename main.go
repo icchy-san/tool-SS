@@ -1,19 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
-	"google.golang.org/api/drive/v3"
-	"google.golang.org/api/googleapi"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/googleapi"
 )
 
 func getClient(config *oauth2.Config) *http.Client {
@@ -66,13 +68,37 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
+// Post URL to Slack #xl-db更新-medical
+func postMsg2Slack(text string) error {
+	jsonStr := `{"username": "Differ君", "text":"` + text + `"}`
+	req, err := http.NewRequest(
+		"POST",
+		"",
+		bytes.NewBuffer([]byte(jsonStr)),
+	)
+
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	return nil
+}
+
 func main() {
 	b, err := ioutil.ReadFile("credentials.json")
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
 	}
 
-	log.Printf("%v", b)
 	config, err := google.ConfigFromJSON(b, drive.DriveFileScope)
 	if err != nil {
 		log.Println(err)
@@ -105,9 +131,6 @@ func main() {
 		log.Fatalf("Error: %v", err)
 	}
 
-	fmt.Printf("%s, %s, %s\n", res.Name, res.Id, res.MimeType)
-	fmt.Printf("SpreadSheet URL: https://docs.google.com/spreadsheets/d/%s\n", res.Id)
-
 	permissiondata := &drive.Permission{
 		Type:               "domain",
 		Role:               "reader",
@@ -119,4 +142,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error: %v", err)
 	}
+
+	fmt.Printf("%s, %s, %s\n", res.Name, res.Id, res.MimeType)
+	sheetURL := fmt.Sprintf("SpreadSheet URL: https://docs.google.com/spreadsheets/d/%s\n", res.Id)
+	fmt.Printf("%v", sheetURL)
+
+	err = postMsg2Slack(sheetURL)
+
+	if err != nil {
+		log.Printf("%s", err)
+	}
+
 }
